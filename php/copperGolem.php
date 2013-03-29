@@ -3,6 +3,7 @@
   class CopperGolem {
 
     private $formNE = array('input', 'textarea', 'button', 'select', 'label');
+    private $lurl = '';
 
     function CopperGolem (){
       $this->ch = curl_init();
@@ -15,26 +16,33 @@
       curl_setopt($ch, CURLOPT_USERAGENT, "Mozilla/5.0 (Windows; U; Windows NT 6.0; en-US; rv:1.9.0.12) Gecko/2009070611 Firefox/3.0.12");
       curl_setopt($ch, CURLOPT_AUTOREFERER, true); // Isn't this great?
       curl_setopt($ch, CURLOPT_ENCODING, ""); // We want everything, then... we'll have fun
-      curl_setopt($ch, CURLOPT_HTTPHEADER, array('Accept: */*', 'Accept-Language: en-us,en;q=0.5', 'Accept-Charset: ISO-8859-1,utf-8;q=0.7,*;q=0.7'));      
+      //curl_setopt($ch, CURLOPT_HTTPHEADER, array('Accept: */*', 'Accept-Language: en-us,en;q=0.5', 'Accept-Charset: ISO-8859-1,utf-8;q=0.7,*;q=0.7'));      
+      curl_setopt($ch, CURLOPT_HTTPHEADER, array('Accept: */*', 'Accept-Language: en-us,en;q=0.5', 'Accept-Charset: utf-8;q=0.7,*;q=0.7'));      
     }
     
     private function act($url, $params = false){
       $ch = $this->ch;
       curl_setopt($ch, CURLOPT_URL, $url);
       if ($params != false){
+        echo($this->myurlencode($params));
         curl_setopt($ch, CURLOPT_POSTFIELDS, $this->myurlencode($params));
         curl_setopt($ch, CURLOPT_POST, 1);
       }
       else
         curl_setopt($ch, CURLOPT_POST, 0);
       $r = curl_exec($ch);
+      $this->lurl = $url;
       return $r;
     }
     
     private function myurlencode($dict){
-      $r = "";
+      $r = mb_convert_encoding('', 'utf-8');
       foreach($dict as $key => $value)
-        $r = $r.urlencode($key).'='.urlencode($value).'&';
+        if (is_array($value))
+          foreach($value as $v)
+            $r = $r.urlencode($key).'='.urlencode($v).'&';
+        else
+          $r = $r.urlencode($key).'='.urlencode($value).'&';
       return $r;
     }
     
@@ -46,18 +54,30 @@
       return $this->act($url, $params);
     }
 
-    function form($url, $params){
+    function form($p, $params){
       $dom = new DOMDocument();
-      $p = $this->act($url);
-      $dom->loadHTML(mb_convert_encoding($p, 'utf-8'));
+      //$dom->loadHTML(mb_convert_encoding($p, 'utf-8'));
+      $dom->loadHTML($p);
       $forms = $dom->getElementsByTagName('form');
       $form = $this->findMatch($forms, $params);
       if (!$form)
         return '';
       $params = array_merge($this->getDefaultParams($form), $params);
+      $newurl = $this->getNewURL($form->getAttribute('action'));
       if ($form->getAttribute('method') == 'get')
-        return $this->act($url.'?'.$this->myurlencode($params));
-      return $this->act($url, $params);
+        return $this->act($newurl.'?'.$this->myurlencode($params));
+      return $this->act($newurl, $params);
+    }
+    
+    private function getNewURL($dest){
+      if (parse_url($dest, PHP_URL_SCHEME) != '') // absolute already
+        return $dest;
+      $orig = $this->lurl;
+      if ($dest[0] != '/')
+        $splitpos = strpos($orig, '/', 10)+1;
+      else
+        $splitpos = strrpos($orig, '/');
+      return substr($orig, 0, $splitpos).$dest;
     }
     
     // I am tempted to use functional programming here, but didn't find a nice way in php
@@ -78,8 +98,12 @@
         if ($matches)
           return $form; 
       }
-      //TODO: error 
+      $this->errorNote("form not found\n");
       return false; 
+    }
+    
+    private function errorNote($str){
+      echo($str); //TODO: nice error
     }
 
     private function getFieldNames($form){
@@ -87,7 +111,6 @@
       foreach ($this->formNE as $ne)
         foreach($form->getElementsByTagName($ne) as $e)
           $r[] = $e->getAttribute('name');
-      echo("$r\n");
       return $r;
     }
 
@@ -104,5 +127,5 @@
       curl_close($this->ch);
     }
 
-  }
+  }  
 ?>
